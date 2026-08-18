@@ -1316,18 +1316,52 @@ Thank you.`
                     </div>
                   </div>
                 ))}
-
-                {pricingView === "whiteGlove" && (
+                {pricingView === "whiteGlove" ? (
                   <div className="quote-line" key="white-glove">
                     <div>
                       <div className="quote-sku">WGD</div>
                       <div className="quote-name">White Glove Fee</div>
                     </div>
-
                     <div className="quote-right">
                       <strong>{money(WHITE_GLOVE_FEE)}</strong>
                     </div>
                   </div>
-                )}
+                ) : null}
               </>
             )}
+          </div>
+
+          <div className="quote-bottom">
+            <div className="subtotal">
+              <span>Subtotal</span>
+              <strong>{money(subtotal)}</strong>
+            </div>
+
+            <p>Shipping and applicable taxes not included.</p>
+
+            <button
+              className="save-button wholesale-button"
+              onClick={() => saveQuote()}
+              disabled={!selectedMachine}
+            >
+              {pricingView === "whiteGlove"
+                ? "Download White Glove Quote"
+                : "Download Wholesale Dealer Quote"}
+            </button>
+
+            <button
+              className="submit-button"
+              onClick={submitQuoteRequest}
+              disabled={!selectedMachine}
+            >
+              Submit Quote Request
+            </button>
+          </div>
+        </aside>
+      </main>
+      )}
+    </div>
+  )
+}
+
+export default App
