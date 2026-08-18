@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react"
+import html2pdf from "html2pdf.js"
 import "./App.css"
 import products from "./data/products"
 import parts from "./data/parts"
@@ -438,7 +439,7 @@ function App() {
     printWindow.print()
   }
 
-  function saveQuote() {
+  function buildQuoteHtml() {
     const logoForPdf = `${window.location.origin}${LOGO.replace("./", "/")}`
     const pdfSubtotal = getPdfSubtotal()
 
@@ -478,7 +479,7 @@ function App() {
         `
         : ""
 
-    const html = `
+    return `
       <html>
         <head>
           <title>INNOVA ${pricingView === "whiteGlove" ? "White Glove Install" : "Dealer Install"} Quote</title>
@@ -488,7 +489,6 @@ function App() {
               padding: 34px;
               color: #20242a;
             }
-
             .header {
               display: flex;
               justify-content: space-between;
@@ -497,22 +497,16 @@ function App() {
               padding-bottom: 18px;
               margin-bottom: 24px;
             }
-
             .logo {
               max-width: 210px;
               max-height: 85px;
               object-fit: contain;
             }
-
-            .quote-title {
-              text-align: right;
-            }
-
+            .quote-title { text-align: right; }
             .quote-title h1 {
               margin: 0;
               font-size: 30px;
             }
-
             .badge {
               display: inline-block;
               margin-top: 8px;
@@ -525,7 +519,6 @@ function App() {
               text-transform: uppercase;
               letter-spacing: .04em;
             }
-
             .dealer-box {
               display: grid;
               grid-template-columns: 1fr 1fr;
@@ -536,13 +529,11 @@ function App() {
               border-radius: 10px;
               margin-bottom: 24px;
             }
-
             table {
               width: 100%;
               border-collapse: collapse;
               margin-top: 18px;
             }
-
             th {
               background: #20242a;
               color: white;
@@ -550,37 +541,27 @@ function App() {
               text-transform: uppercase;
               letter-spacing: .04em;
             }
-
             th, td {
               border: 1px solid #d0d5dd;
               padding: 10px;
               text-align: left;
             }
-
-            td:nth-child(3),
-            td:nth-child(4),
-            td:nth-child(5) {
+            td:nth-child(3), td:nth-child(4), td:nth-child(5) {
               text-align: right;
             }
-
-            tbody tr:nth-child(even) {
-              background: #f9fafb;
-            }
-
+            tbody tr:nth-child(even) { background: #f9fafb; }
             .subtotal {
               text-align: right;
               font-size: 24px;
               font-weight: 900;
               margin-top: 18px;
             }
-
             .disclaimer {
               margin-top: 10px;
               color: #667085;
               font-size: 13px;
               text-align: right;
             }
-
             .notes {
               margin-top: 26px;
               border: 1px solid #d0d5dd;
@@ -589,7 +570,6 @@ function App() {
               min-height: 75px;
               background: #fafafa;
             }
-
             .footer {
               margin-top: 38px;
               padding-top: 16px;
@@ -599,13 +579,11 @@ function App() {
             }
           </style>
         </head>
-
         <body>
           <div class="header">
             <div>
               <img src="${logoForPdf}" class="logo" />
             </div>
-
             <div class="quote-title">
               <h1>${pricingView === "whiteGlove" ? "White Glove Install Quote" : "Dealer Install Quote"}</h1>
               <div>Date: ${dealerInfo.date}</div>
@@ -631,7 +609,6 @@ function App() {
                 <th>Line Total</th>
               </tr>
             </thead>
-
             <tbody>
               ${rows || whiteGloveRow ? rows + whiteGloveRow : `<tr><td colspan="5">No items selected.</td></tr>`}
             </tbody>
@@ -649,12 +626,15 @@ function App() {
           </div>
 
           <div class="footer">
-            Please save this quote and e-mail to sales@abminternational.com.
+            INNOVA Longarm — Quote Request
           </div>
         </body>
       </html>
     `
+  }
 
+  function saveQuote() {
+    const html = buildQuoteHtml()
     const printWindow = window.open("", "_blank")
     if (!printWindow) return
 
@@ -664,36 +644,87 @@ function App() {
     printWindow.print()
   }
 
-  function submitQuoteRequest() {
-    saveQuote()
+  async function submitQuoteRequest() {
+    if (!selectedMachine) return
 
-    const subject = encodeURIComponent(
-      `INNOVA ${pricingView === "whiteGlove" ? "White Glove Install" : "Dealer Install"} Quote Request - ${
-        dealerInfo.dealerName || "Dealer"
-      }`
-    )
+    try {
+      const html = buildQuoteHtml()
 
-    const body = encodeURIComponent(
-`Hello,
+      const container = document.createElement("div")
+      container.style.position = "fixed"
+      container.style.left = "-100000px"
+      container.style.top = "0"
+      container.style.width = "1100px"
+      container.style.background = "#ffffff"
+      container.innerHTML = html.replace(/^.*?<body>/s, "").replace(/<\/body>.*$/s, "")
+      document.body.appendChild(container)
 
-Please see the attached INNOVA ${
-  pricingView === "whiteGlove" ? "White Glove" : "wholesale dealer"
-} quote request.
+      const pdfDataUri = await html2pdf()
+        .set({
+          margin: 0.35,
+          filename: "INNOVA_Quote.pdf",
+          image: { type: "jpeg", quality: 0.98 },
+          html2canvas: { scale: 1.5, useCORS: true },
+          jsPDF: { unit: "in", format: "letter", orientation: "portrait" },
+          pagebreak: { mode: ["css", "legacy"] },
+        })
+        .from(container)
+        .outputPdf("datauristring")
 
-Dealer Name: ${dealerInfo.dealerName}
-PO Number: ${dealerInfo.poNumber}
-${pricingView === "whiteGlove" ? `Customer Name: ${dealerInfo.customerName}
-Customer Address: ${dealerInfo.customerAddress}
-Customer Contact: ${dealerInfo.customerContact}
-` : ""}Quote Subtotal: ${money(getPdfSubtotal())}
+      document.body.removeChild(container)
 
-Please save the generated PDF quote and attach it to this email before sending.
+      const pdfBase64 = pdfDataUri.split(",")[1]
 
-Thank you.`
-    )
+      const subject = `INNOVA ${
+        pricingView === "whiteGlove" ? "White Glove Install" : "Dealer Install"
+      } Quote Request - ${dealerInfo.dealerName || "Dealer"}`
 
-    window.location.href =
-      `mailto:sales@abminternational.com;vince.nutt@abminternational.com;ryan@abminternational.com;krystal@abminternational.com;cheyenne@abminternational.com;randy.veldman@abminternational.com?subject=${subject}&body=${body}`
+      const emailBody = `
+        <p>Hello,</p>
+        <p>A new INNOVA quote has been submitted.</p>
+        <p>
+          <strong>Dealer Name:</strong> ${dealerInfo.dealerName || ""}<br>
+          <strong>PO Number:</strong> ${dealerInfo.poNumber || ""}<br>
+          <strong>Quote Type:</strong> ${
+            pricingView === "whiteGlove" ? "White Glove Install" : "Dealer Install"
+          }<br>
+          ${
+            pricingView === "whiteGlove"
+              ? `<strong>Customer Name:</strong> ${dealerInfo.customerName || ""}<br>
+                 <strong>Customer Address:</strong> ${dealerInfo.customerAddress || ""}<br>
+                 <strong>Customer Contact:</strong> ${dealerInfo.customerContact || ""}<br>`
+              : ""
+          }
+          <strong>Quote Subtotal:</strong> ${money(getPdfSubtotal())}
+        </p>
+        <p>The quote PDF is attached to this email.</p>
+      `
+
+      const response = await fetch("/api/send-quote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject,
+          html: emailBody,
+          pdfBase64,
+          fileName: `INNOVA_Quote_${(dealerInfo.dealerName || "Dealer").replace(
+            /[^a-z0-9_-]/gi,
+            "_"
+          )}.pdf`,
+        }),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || "The quote could not be sent.")
+      }
+
+      alert("Quote submitted successfully. The quote PDF has been emailed to the sales team.")
+    } catch (error) {
+      console.error("Quote submission failed:", error)
+      alert(`Unable to submit the quote: ${error.message}`)
+    }
   }
 
   function renderMachineCards() {
