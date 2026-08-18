@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react"
 import "./App.css"
 import products from "./data/products"
+import parts from "./data/parts"
 
 const LOGO = "/photos/innova-logo.png"
 const WHITE_GLOVE_FEE = 3500
@@ -58,6 +59,9 @@ function App() {
   const [machineSizes, setMachineSizes] = useState({})
   const [searchTerm, setSearchTerm] = useState("")
   const [themeMode, setThemeMode] = useState("light")
+  const [activeTab, setActiveTab] = useState("order")
+  const [partsSearch, setPartsSearch] = useState("")
+  const [partsCart, setPartsCart] = useState({})
 
   const categories = useMemo(() => {
     const grouped = {}
@@ -312,6 +316,126 @@ function App() {
     return (
       itemsSubtotal + (pricingView === "whiteGlove" ? WHITE_GLOVE_FEE : 0)
     )
+  }
+
+  const filteredParts = useMemo(() => {
+    const query = partsSearch.trim().toLowerCase()
+
+    if (!query) return parts
+
+    return parts.filter(
+      (part) =>
+        part.sku.toLowerCase().includes(query) ||
+        part.name.toLowerCase().includes(query)
+    )
+  }, [partsSearch])
+
+  const partsCartItems = Object.values(partsCart)
+
+  const partsSubtotal = partsCartItems.reduce(
+    (total, part) => total + part.price * part.qty,
+    0
+  )
+
+  function addPart(part) {
+    setPartsCart((prev) => ({
+      ...prev,
+      [part.sku]: prev[part.sku]
+        ? { ...prev[part.sku], qty: prev[part.sku].qty + 1 }
+        : { ...part, qty: 1 },
+    }))
+  }
+
+  function updatePartQty(sku, qty) {
+    setPartsCart((prev) => ({
+      ...prev,
+      [sku]: {
+        ...prev[sku],
+        qty: Math.max(1, Number(qty) || 1),
+      },
+    }))
+  }
+
+  function removePart(sku) {
+    setPartsCart((prev) => {
+      const next = { ...prev }
+      delete next[sku]
+      return next
+    })
+  }
+
+  function exportPartsQuote() {
+    const rows = partsCartItems
+      .map(
+        (part) => `
+          <tr>
+            <td>${part.sku}</td>
+            <td>${part.name}</td>
+            <td>${part.qty}</td>
+            <td>${money(part.price)}</td>
+            <td>${money(part.price * part.qty)}</td>
+          </tr>
+        `
+      )
+      .join("")
+
+    const html = `
+      <html>
+        <head>
+          <title>INNOVA Parts Sales Quote</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 34px; color: #20242a; }
+            .header { display:flex; justify-content:space-between; align-items:center; border-bottom:5px solid #00a651; padding-bottom:18px; margin-bottom:24px; }
+            .logo { max-width:210px; max-height:85px; object-fit:contain; }
+            h1 { margin:0 0 8px; font-size:30px; }
+            .info { display:grid; grid-template-columns:1fr 1fr; gap:10px 40px; background:#f4f6f8; border:1px solid #d0d5dd; padding:16px; border-radius:10px; }
+            table { width:100%; border-collapse:collapse; margin-top:22px; }
+            th { background:#20242a; color:white; }
+            th, td { border:1px solid #d0d5dd; padding:10px; text-align:left; }
+            td:nth-child(3), td:nth-child(4), td:nth-child(5) { text-align:right; }
+            .total { text-align:right; font-size:24px; font-weight:900; margin-top:18px; }
+            .footer { margin-top:38px; padding-top:16px; border-top:1px solid #999; font-weight:900; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <img src="${window.location.origin}${LOGO.replace("./", "/")}" class="logo" />
+            <div>
+              <h1>INNOVA Parts Sales Quote</h1>
+              <div>Date: ${dealerInfo.date}</div>
+            </div>
+          </div>
+          <div class="info">
+            <div><strong>Dealer Name:</strong> ${dealerInfo.dealerName}</div>
+            <div><strong>PO Number:</strong> ${dealerInfo.poNumber}</div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Part #</th>
+                <th>Description</th>
+                <th>Qty</th>
+                <th>Unit Price</th>
+                <th>Line Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows || '<tr><td colspan="5">No parts selected.</td></tr>'}
+            </tbody>
+          </table>
+          <div class="total">Subtotal: ${money(partsSubtotal)}</div>
+          <div class="footer">Shipping and applicable taxes not included. Quote is subject to final review and approval.</div>
+        </body>
+      </html>
+    `
+
+    const printWindow = window.open("", "_blank")
+    if (!printWindow) return
+
+    printWindow.document.write(html)
+    printWindow.document.close()
+    printWindow.focus()
+    printWindow.print()
   }
 
   function saveQuote() {
@@ -640,12 +764,8 @@ Thank you.`
                 }
               >
                 {sizes.map((size) => (
-                  <option
-                    key={size}
-                    value={size}
-                    disabled={!availableSizes.has(size)}
-                  >
-                    {size} Frame{!availableSizes.has(size) ? " (not yet configured)" : ""}
+                  <option key={size} value={size}>
+                    {size} Frame
                   </option>
                 ))}
               </select>
@@ -683,16 +803,22 @@ Thank you.`
           <div className="toggle-group">
             <button
               className={pricingView === "wholesale" ? "active" : ""}
-              onClick={() => setPricingView("wholesale")}
+              onClick={() => { setActiveTab("order"); setPricingView("wholesale") }}
             >
               Dealer Install
             </button>
 
             <button
               className={pricingView === "whiteGlove" ? "active" : ""}
-              onClick={() => setPricingView("whiteGlove")}
+              onClick={() => { setActiveTab("order"); setPricingView("whiteGlove") }}
             >
               White Glove Install
+            </button>
+            <button
+              className={activeTab === "parts" ? "active" : ""}
+              onClick={() => setActiveTab("parts")}
+            >
+              Parts
             </button>
           </div>
 
@@ -714,6 +840,239 @@ Thank you.`
         </div>
       </header>
 
+      {activeTab === "parts" ? (
+        <main
+          className="parts-workspace"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1fr) 390px",
+            gap: "24px",
+            padding: "24px",
+            alignItems: "start",
+          }}
+        >
+          <section
+            className="parts-catalog"
+            style={{
+              minWidth: 0,
+              background: "var(--card-bg, #fff)",
+              border: "1px solid var(--border, #d0d5dd)",
+              borderRadius: "18px",
+              padding: "24px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "end",
+                gap: "16px",
+                marginBottom: "18px",
+              }}
+            >
+              <div>
+                <h2 style={{ margin: 0 }}>Parts</h2>
+                <span style={{ opacity: 0.7 }}>
+                  {filteredParts.length.toLocaleString()} parts available
+                </span>
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                gap: "10px",
+                marginBottom: "20px",
+              }}
+            >
+              <input
+                type="text"
+                value={partsSearch}
+                onChange={(e) => setPartsSearch(e.target.value)}
+                placeholder="Search by part number or product name..."
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  padding: "14px 16px",
+                  borderRadius: "12px",
+                  border: "1px solid var(--border, #d0d5dd)",
+                  background: "var(--input-bg, #fff)",
+                  color: "inherit",
+                  fontSize: "15px",
+                }}
+              />
+              {partsSearch && (
+                <button onClick={() => setPartsSearch("")}>Clear</button>
+              )}
+            </div>
+
+            <div
+              className="parts-grid"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(245px, 1fr))",
+                gap: "16px",
+              }}
+            >
+              {filteredParts.map((part) => {
+                const inCart = Boolean(partsCart[part.sku])
+
+                return (
+                  <article
+                    key={part.sku}
+                    className={`part-card ${inCart ? "selected" : ""}`}
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "space-between",
+                      minHeight: "165px",
+                      padding: "18px",
+                      borderRadius: "16px",
+                      border: "1px solid var(--border, #d0d5dd)",
+                      background: "var(--soft-bg, #f8fafc)",
+                    }}
+                  >
+                    <div>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: "10px",
+                          alignItems: "center",
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: "12px",
+                            fontWeight: 900,
+                            letterSpacing: ".04em",
+                            opacity: 0.7,
+                          }}
+                        >
+                          {part.sku}
+                        </span>
+                        {inCart && (
+                          <span style={{ fontSize: "12px", fontWeight: 800 }}>
+                            Added
+                          </span>
+                        )}
+                      </div>
+
+                      <h3 style={{ margin: "12px 0 18px", lineHeight: 1.3 }}>
+                        {part.name}
+                      </h3>
+                    </div>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        gap: "12px",
+                      }}
+                    >
+                      <strong style={{ fontSize: "18px" }}>
+                        {money(part.price)}
+                      </strong>
+
+                      <button
+                        className="add-button"
+                        onClick={() => addPart(part)}
+                      >
+                        {inCart ? "Add Another" : "Add to Parts Quote"}
+                      </button>
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+
+            {filteredParts.length === 0 && (
+              <div
+                style={{
+                  padding: "50px 20px",
+                  textAlign: "center",
+                  opacity: 0.7,
+                }}
+              >
+                No parts found. Try searching by a different part number or
+                product name.
+              </div>
+            )}
+          </section>
+
+          <aside
+            className="parts-quote-sidebar quote-sidebar"
+            style={{ position: "sticky", top: "24px" }}
+          >
+            <div className="quote-top">
+              <h2>Parts Quote</h2>
+              <p>Dealer parts pricing.</p>
+            </div>
+
+            <div className="quote-lines">
+              {partsCartItems.length === 0 ? (
+                <div className="empty-cart">
+                  Search for a part and add it to your quote.
+                </div>
+              ) : (
+                partsCartItems.map((part) => (
+                  <div className="quote-line" key={part.sku}>
+                    <div>
+                      <div className="quote-sku">{part.sku}</div>
+                      <div className="quote-name">{part.name}</div>
+
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                          marginTop: "8px",
+                        }}
+                      >
+                        <span>Qty</span>
+                        <input
+                          type="number"
+                          min="1"
+                          value={part.qty}
+                          onChange={(e) =>
+                            updatePartQty(part.sku, e.target.value)
+                          }
+                          style={{ width: "60px" }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="quote-right">
+                      <strong>{money(part.price * part.qty)}</strong>
+                      <button onClick={() => removePart(part.sku)}>
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="quote-bottom">
+              <div className="subtotal">
+                <span>Subtotal</span>
+                <strong>{money(partsSubtotal)}</strong>
+              </div>
+
+              <p>Shipping and applicable taxes not included.</p>
+
+              <button
+                className="save-button wholesale-button"
+                onClick={exportPartsQuote}
+                disabled={partsCartItems.length === 0}
+              >
+                Export Sales Quote
+              </button>
+            </div>
+          </aside>
+        </main>
+      ) : (
       <main className="main-layout">
         <nav className="category-sidebar">
           <h3>Categories</h3>
@@ -972,38 +1331,3 @@ Thank you.`
                 )}
               </>
             )}
-          </div>
-
-          <div className="quote-bottom">
-            <div className="subtotal">
-              <span>Subtotal</span>
-              <strong>{money(subtotal)}</strong>
-            </div>
-
-            <p>Shipping and applicable taxes not included.</p>
-
-            <button
-              className="save-button wholesale-button"
-              onClick={() => saveQuote()}
-              disabled={!selectedMachine}
-            >
-              {pricingView === "whiteGlove"
-                ? "Download White Glove Quote"
-                : "Download Wholesale Dealer Quote"}
-            </button>
-
-            <button
-              className="submit-button"
-              onClick={submitQuoteRequest}
-              disabled={!selectedMachine}
-            >
-              Submit Quote Request
-            </button>
-          </div>
-        </aside>
-      </main>
-    </div>
-  )
-}
-
-export default App
