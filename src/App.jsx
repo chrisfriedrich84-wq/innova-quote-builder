@@ -35,6 +35,8 @@ function getMachineFamily(product) {
 }
 
 function getMachineSize(product) {
+  if (product._virtualFrameSize) return product._virtualFrameSize
+
   const match = product.name.match(/(\d+)' Frame/i)
   return match ? `${match[1]}'` : ""
 }
@@ -82,6 +84,26 @@ function App() {
 
         grouped[family].push(product)
       })
+
+    // Add the new 5' and 8' frame-size options for every machine family.
+    // They use the same price as the first configured frame size and N/A as SKU.
+    Object.entries(grouped).forEach(([family, variants]) => {
+      const reference = variants[0]
+
+      ;["5'", "8'"].forEach((size) => {
+        if (!variants.some((product) => getMachineSize(product) === size)) {
+          variants.unshift({
+            ...reference,
+            sku: "N/A",
+            name: `${family} - ${size} Frame`,
+            image: reference.image,
+            price: reference.price,
+            selectionType: "required-single",
+            _virtualFrameSize: size,
+          })
+        }
+      })
+    })
 
     return grouped
   }, [])
@@ -142,11 +164,68 @@ function App() {
     itemsSubtotal + (pricingView === "whiteGlove" ? WHITE_GLOVE_FEE : 0)
 
   const keyboardTray = products.find((p) => p.sku === "ACC1064")
+  const wheelKit = products.find((p) => p.sku === "ACC1206")
+  const steelShankAdapter = products.find((p) => p.sku === "ACC1187")
 
-  const shouldSuggestKeyboardTray =
-    selectedMachine?.name?.toLowerCase().includes("autopilot") &&
-    keyboardTray &&
-    !selectedItems[keyboardTray.sku]
+  const quickChangeFootSkus = new Set([
+    "ACC1193",
+    "ACC1194",
+    "ACC1203",
+    "ACC1204",
+    "ACC1205",
+  ])
+
+  const clearPlasticFootSkus = new Set([
+    "ACC1184",
+    "ACC1185",
+    "ACC1186",
+  ])
+
+  const hasAutopilot = selectedMachine?.name
+    ?.toLowerCase()
+    .includes("autopilot")
+
+  const isM28 = selectedMachine?.name
+    ?.toLowerCase()
+    .includes("m28")
+
+  const hasRecommendedFoot =
+    Object.keys(selectedItems).some(
+      (sku) => quickChangeFootSkus.has(sku) || clearPlasticFootSkus.has(sku)
+    )
+
+  const recommendations = []
+
+  if (hasAutopilot && keyboardTray && !selectedItems[keyboardTray.sku]) {
+    recommendations.push({
+      id: keyboardTray.sku,
+      product: keyboardTray,
+      title: "Keyboard and Mouse Tray",
+      description: "Recommended with AutoPilot packages.",
+    })
+  }
+
+  if (isM28 && wheelKit && !selectedItems[wheelKit.sku]) {
+    recommendations.push({
+      id: wheelKit.sku,
+      product: wheelKit,
+      title: "HP Double Bearing Carriage Wheel Kit",
+      description: "Recommended with M28 machines.",
+    })
+  }
+
+  if (
+    hasRecommendedFoot &&
+    steelShankAdapter &&
+    !selectedItems[steelShankAdapter.sku]
+  ) {
+    recommendations.push({
+      id: steelShankAdapter.sku,
+      product: steelShankAdapter,
+      title: "Steel Shank Adapter and Spring",
+      description: "Recommended with Quick Change and Clear Plastic feet.",
+    })
+  }
 
   function selectMachine(product) {
     setSelectedMachine(product)
@@ -278,7 +357,7 @@ function App() {
     const html = `
       <html>
         <head>
-          <title>INNOVA ${pricingView === "whiteGlove" ? "White Glove" : "Wholesale"} Quote</title>
+          <title>INNOVA ${pricingView === "whiteGlove" ? "White Glove Install" : "Dealer Install"} Quote</title>
           <style>
             body {
               font-family: Arial, sans-serif;
@@ -404,10 +483,10 @@ function App() {
             </div>
 
             <div class="quote-title">
-              <h1>${pricingView === "whiteGlove" ? "White Glove Quote" : "Dealer Quote Request"}</h1>
+              <h1>${pricingView === "whiteGlove" ? "White Glove Install Quote" : "Dealer Install Quote"}</h1>
               <div>Date: ${dealerInfo.date}</div>
               <div class="badge">
-                ${pricingView === "whiteGlove" ? "White Glove Pricing" : "Wholesale Dealer Pricing"}
+                ${pricingView === "whiteGlove" ? "White Glove Install Pricing" : "Dealer Install Pricing"}
               </div>
             </div>
           </div>
@@ -465,7 +544,7 @@ function App() {
     saveQuote()
 
     const subject = encodeURIComponent(
-      `INNOVA ${pricingView === "whiteGlove" ? "White Glove" : "Wholesale"} Quote Request - ${
+      `INNOVA ${pricingView === "whiteGlove" ? "White Glove Install" : "Dealer Install"} Quote Request - ${
         dealerInfo.dealerName || "Dealer"
       }`
     )
@@ -523,9 +602,10 @@ Thank you.`
         variants.find((product) => getMachineSize(product) === currentSize) ||
         variants[0]
 
-      const sizes = variants
-        .map((product) => getMachineSize(product))
-        .filter(Boolean)
+      const sizes = ["5'", "8'", "10'", "11'", "12'"]
+      const availableSizes = new Set(
+        variants.map((product) => getMachineSize(product)).filter(Boolean)
+      )
 
       return (
         <article
@@ -543,7 +623,9 @@ Thank you.`
           </div>
 
           <div className="product-text">
-            <div className="sku">Machine</div>
+            <div className="sku">
+              {selectedVariant.sku === "N/A" ? "SKU: N/A" : "Machine"}
+            </div>
             <h3>{family}</h3>
 
             <label
@@ -558,8 +640,12 @@ Thank you.`
                 }
               >
                 {sizes.map((size) => (
-                  <option key={size} value={size}>
-                    {size} Frame
+                  <option
+                    key={size}
+                    value={size}
+                    disabled={!availableSizes.has(size)}
+                  >
+                    {size} Frame{!availableSizes.has(size) ? " (not yet configured)" : ""}
                   </option>
                 ))}
               </select>
@@ -569,9 +655,6 @@ Thank you.`
               {money(getDisplayPrice(selectedVariant, pricingView))}
             </div>
 
-            {pricingView === "whiteGlove" && (
-              <div className="price-note">Includes 5% White Glove machine markup</div>
-            )}
           </div>
 
           <button
@@ -602,14 +685,14 @@ Thank you.`
               className={pricingView === "wholesale" ? "active" : ""}
               onClick={() => setPricingView("wholesale")}
             >
-              Wholesale View
+              Dealer Install
             </button>
 
             <button
               className={pricingView === "whiteGlove" ? "active" : ""}
               onClick={() => setPricingView("whiteGlove")}
             >
-              White Glove View
+              White Glove Install
             </button>
           </div>
 
@@ -836,24 +919,19 @@ Thank you.`
         <aside className="quote-sidebar">
           <div className="quote-top">
             <h2>Quote Builder</h2>
-            <p>
-              {pricingView === "whiteGlove"
-                ? "White Glove pricing — machines are 5% above wholesale and include a $3,500 White Glove Fee."
-                : "Wholesale dealer pricing view."}
-            </p>
           </div>
 
           <div className="quote-lines">
-            {shouldSuggestKeyboardTray && (
-              <div className="recommendation-card">
+            {recommendations.map((recommendation) => (
+              <div className="recommendation-card" key={recommendation.id}>
                 <div className="recommendation-label">Recommended Add-On</div>
-                <strong>Don&apos;t forget the Keyboard and Mouse Tray!</strong>
-                <p>This is commonly added with AutoPilot packages.</p>
-                <button onClick={() => toggleProduct(keyboardTray)}>
-                  Add Keyboard and Mouse Tray
+                <strong>{recommendation.title}</strong>
+                <p>{recommendation.description}</p>
+                <button onClick={() => toggleProduct(recommendation.product)}>
+                  Add {recommendation.title}
                 </button>
               </div>
-            )}
+            ))}
 
             {quoteItems.length === 0 ? (
               <div className="empty-cart">Select one machine to begin.</div>
