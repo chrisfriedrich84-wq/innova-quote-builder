@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useMemo, useRef, useState } from "react"
 import html2pdf from "html2pdf.js"
 import "./App.css"
 import products from "./data/products"
@@ -47,6 +47,7 @@ function App() {
   const [dealerInfo, setDealerInfo] = useState({
     date: new Date().toISOString().slice(0, 10),
     dealerName: "",
+    dealerEmail: "",
     poNumber: "",
     customerName: "",
     customerAddress: "",
@@ -61,6 +62,8 @@ function App() {
   const [searchTerm, setSearchTerm] = useState("")
   const [themeMode, setThemeMode] = useState("light")
   const [activeTab, setActiveTab] = useState("order")
+  const [orderStep, setOrderStep] = useState("builder")
+  const reviewRef = useRef(null)
   const [partsSearch, setPartsSearch] = useState("")
   const [partsCart, setPartsCart] = useState({})
 
@@ -408,6 +411,7 @@ function App() {
           </div>
           <div class="info">
             <div><strong>Dealer Name:</strong> ${dealerInfo.dealerName}</div>
+            <div><strong>Dealer Email:</strong> ${dealerInfo.dealerEmail}</div>
             <div><strong>PO Number:</strong> ${dealerInfo.poNumber}</div>
           </div>
           <table>
@@ -595,6 +599,7 @@ function App() {
 
           <div class="dealer-box">
             <div><strong>Dealer Name:</strong> ${dealerInfo.dealerName}</div>
+            <div><strong>Dealer Email:</strong> ${dealerInfo.dealerEmail}</div>
             <div><strong>PO Number:</strong> ${dealerInfo.poNumber}</div>
             ${customerRows}
           </div>
@@ -644,48 +649,65 @@ function App() {
     printWindow.print()
   }
 
+  function openOrderReview() {
+    if (!selectedMachine) return
+    setOrderStep("review")
+    window.scrollTo({ top: 0, behavior: "smooth" })
+  }
+
   async function submitQuoteRequest() {
     if (!selectedMachine) return
 
-    try {
-      const html = buildQuoteHtml()
+    const reviewElement = reviewRef.current
 
-      const container = document.createElement("div")
-      container.style.position = "fixed"
-      container.style.left = "-100000px"
-      container.style.top = "0"
-      container.style.width = "1100px"
-      container.style.background = "#ffffff"
-      container.innerHTML = html.replace(/^.*?<body>/s, "").replace(/<\/body>.*$/s, "")
-      document.body.appendChild(container)
+    if (!reviewElement) {
+      alert("The order review could not be found. Please try again.")
+      return
+    }
+
+    let actions = null
+
+    try {
+      actions = reviewElement.querySelector(".review-actions")
+      if (actions) actions.style.display = "none"
+
+      await new Promise((resolve) => requestAnimationFrame(resolve))
 
       const pdfDataUri = await html2pdf()
         .set({
           margin: 0.35,
-          filename: "INNOVA_Quote.pdf",
+          filename: "INNOVA_Order.pdf",
           image: { type: "jpeg", quality: 0.98 },
-          html2canvas: { scale: 1.5, useCORS: true },
-          jsPDF: { unit: "in", format: "letter", orientation: "portrait" },
+          html2canvas: {
+            scale: 1.5,
+            useCORS: true,
+            backgroundColor: "#ffffff",
+            logging: false,
+          },
+          jsPDF: {
+            unit: "in",
+            format: "letter",
+            orientation: "portrait",
+          },
           pagebreak: { mode: ["css", "legacy"] },
         })
-        .from(container)
+        .from(reviewElement)
         .outputPdf("datauristring")
-
-      document.body.removeChild(container)
 
       const pdfBase64 = pdfDataUri.split(",")[1]
 
       const subject = `INNOVA ${
         pricingView === "whiteGlove" ? "White Glove Install" : "Dealer Install"
-      } Quote Request - ${dealerInfo.dealerName || "Dealer"}`
+      } Order - ${dealerInfo.dealerName || "Dealer"}`
 
       const emailBody = `
         <p>Hello,</p>
-        <p>A new INNOVA quote has been submitted.</p>
+        <p>A new INNOVA order has been submitted.</p>
         <p>
           <strong>Dealer Name:</strong> ${dealerInfo.dealerName || ""}<br>
+          <strong>Dealer Email:</strong> ${dealerInfo.dealerEmail || ""}<br>
           <strong>PO Number:</strong> ${dealerInfo.poNumber || ""}<br>
-          <strong>Quote Type:</strong> ${
+          <strong>Order Type:</strong> ${
             pricingView === "whiteGlove" ? "White Glove Install" : "Dealer Install"
           }<br>
           ${
@@ -695,9 +717,9 @@ function App() {
                  <strong>Customer Contact:</strong> ${dealerInfo.customerContact || ""}<br>`
               : ""
           }
-          <strong>Quote Subtotal:</strong> ${money(getPdfSubtotal())}
+          <strong>Order Total:</strong> ${money(getPdfSubtotal())}
         </p>
-        <p>The quote PDF is attached to this email.</p>
+        <p>The order review PDF is attached to this email.</p>
       `
 
       const response = await fetch("/api/send-quote", {
@@ -707,7 +729,7 @@ function App() {
           subject,
           html: emailBody,
           pdfBase64,
-          fileName: `INNOVA_Quote_${(dealerInfo.dealerName || "Dealer").replace(
+          fileName: `INNOVA_Order_${(dealerInfo.dealerName || "Dealer").replace(
             /[^a-z0-9_-]/gi,
             "_"
           )}.pdf`,
@@ -717,14 +739,124 @@ function App() {
       const result = await response.json()
 
       if (!response.ok) {
-        throw new Error(result.error || "The quote could not be sent.")
+        throw new Error(result.error || "The order could not be submitted.")
       }
 
-      alert("Quote submitted successfully. The quote PDF has been emailed to the sales team.")
+      alert("Order submitted successfully. The order PDF has been emailed to the sales team.")
+      setOrderStep("builder")
     } catch (error) {
-      console.error("Quote submission failed:", error)
-      alert(`Unable to submit the quote: ${error.message}`)
+      console.error("Order submission failed:", error)
+      alert(`Unable to submit the order: ${error.message}`)
+    } finally {
+      if (actions) actions.style.display = "flex"
     }
+  }
+
+  function renderOrderReview() {
+    return (
+      <main className="order-review-page">
+        <div className="order-review-wrap" ref={reviewRef} id="order-review-print">
+          <div className="order-review-header">
+            <div>
+              <img src={LOGO} alt="INNOVA" className="order-review-logo" />
+              <h1>Order Review</h1>
+              <p>
+                {pricingView === "whiteGlove"
+                  ? "White Glove Install"
+                  : "Dealer Install"}
+              </p>
+            </div>
+            <div className="order-review-date">
+              <strong>Date</strong>
+              <span>{dealerInfo.date || ""}</span>
+            </div>
+          </div>
+
+          <section className="review-info-card">
+            <h2>Order Information</h2>
+            <div className="review-info-grid">
+              <div><strong>Dealer Name</strong><span>{dealerInfo.dealerName || "—"}</span></div>
+              <div><strong>Dealer Email</strong><span>{dealerInfo.dealerEmail || "—"}</span></div>
+              <div><strong>PO Number</strong><span>{dealerInfo.poNumber || "—"}</span></div>
+              {pricingView === "whiteGlove" && (
+                <>
+                  <div><strong>Customer Name</strong><span>{dealerInfo.customerName || "—"}</span></div>
+                  <div><strong>Customer Contact</strong><span>{dealerInfo.customerContact || "—"}</span></div>
+                  <div className="review-full"><strong>Customer Address</strong><span>{dealerInfo.customerAddress || "—"}</span></div>
+                </>
+              )}
+              <div className="review-full"><strong>Notes</strong><span>{dealerInfo.notes || "—"}</span></div>
+            </div>
+          </section>
+
+          <section className="review-order-card">
+            <div className="review-section-title">
+              <h2>Order Items</h2>
+              <span>{quoteItems.length} item{quoteItems.length === 1 ? "" : "s"}</span>
+            </div>
+
+            <div className="review-table-wrap">
+              <table className="review-table">
+                <thead>
+                  <tr>
+                    <th>Part #</th>
+                    <th>Description</th>
+                    <th>Qty</th>
+                    <th>Unit Price</th>
+                    <th>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {quoteItems.map((item) => (
+                    <tr key={item.sku}>
+                      <td>{item.sku}</td>
+                      <td>{item.name}</td>
+                      <td>{item.qty}</td>
+                      <td>{money(getDisplayPrice(item, pricingView))}</td>
+                      <td>{money(getDisplayPrice(item, pricingView) * item.qty)}</td>
+                    </tr>
+                  ))}
+                  {pricingView === "whiteGlove" && (
+                    <tr>
+                      <td>WGD</td>
+                      <td>White Glove Fee</td>
+                      <td>1</td>
+                      <td>{money(WHITE_GLOVE_FEE)}</td>
+                      <td>{money(WHITE_GLOVE_FEE)}</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="review-total-box">
+              <span>Order Total</span>
+              <strong>{money(getPdfSubtotal())}</strong>
+            </div>
+
+            <p className="review-disclaimer">
+              Shipping and applicable taxes not included. Order is subject to final review and approval.
+            </p>
+          </section>
+
+          <div className="review-actions">
+            <button
+              className="save-button wholesale-button"
+              onClick={() => setOrderStep("builder")}
+            >
+              ← Back to Order
+            </button>
+            <button
+              className="submit-button"
+              onClick={submitQuoteRequest}
+              disabled={!selectedMachine}
+            >
+              Submit Order
+            </button>
+          </div>
+        </div>
+      </main>
+    )
   }
 
   function renderMachineCards() {
@@ -834,20 +966,20 @@ function App() {
           <div className="toggle-group">
             <button
               className={pricingView === "wholesale" ? "active" : ""}
-              onClick={() => { setActiveTab("order"); setPricingView("wholesale") }}
+              onClick={() => { setActiveTab("order"); setOrderStep("builder"); setPricingView("wholesale") }}
             >
               Dealer Install
             </button>
 
             <button
               className={pricingView === "whiteGlove" ? "active" : ""}
-              onClick={() => { setActiveTab("order"); setPricingView("whiteGlove") }}
+              onClick={() => { setActiveTab("order"); setOrderStep("builder"); setPricingView("whiteGlove") }}
             >
               White Glove Install
             </button>
             <button
               className={activeTab === "parts" ? "active" : ""}
-              onClick={() => setActiveTab("parts")}
+              onClick={() => { setActiveTab("parts"); setOrderStep("builder") }}}
             >
               Parts
             </button>
@@ -870,6 +1002,45 @@ function App() {
           </div>
         </div>
       </header>
+
+      <style>{`
+        .order-review-page { padding: 30px; background: var(--page-bg, #f5f7fa); min-height: calc(100vh - 110px); }
+        .order-review-wrap { max-width: 1000px; margin: 0 auto; background: #fff; color: #20242a; padding: 38px; border: 1px solid #d0d5dd; border-radius: 18px; box-shadow: 0 8px 30px rgba(16, 24, 40, .08); }
+        .order-review-header { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; border-bottom: 5px solid #00a651; padding-bottom: 22px; margin-bottom: 24px; }
+        .order-review-logo { width: 210px; max-height: 80px; object-fit: contain; object-position: left center; }
+        .order-review-header h1 { margin: 18px 0 4px; font-size: 32px; }
+        .order-review-header p { margin: 0; font-weight: 800; opacity: .7; }
+        .order-review-date { min-width: 150px; display: grid; gap: 5px; text-align: right; }
+        .review-info-card, .review-order-card { border: 1px solid #d0d5dd; border-radius: 14px; padding: 22px; margin-bottom: 22px; }
+        .review-info-card h2, .review-order-card h2 { margin: 0 0 18px; }
+        .review-info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 28px; }
+        .review-info-grid > div { display: grid; gap: 5px; }
+        .review-info-grid strong { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; opacity: .65; }
+        .review-full { grid-column: 1 / -1; }
+        .review-section-title { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 12px; }
+        .review-section-title h2 { margin: 0; }
+        .review-section-title span { opacity: .65; font-weight: 700; }
+        .review-table-wrap { overflow-x: auto; }
+        .review-table { width: 100%; border-collapse: collapse; }
+        .review-table th { background: #20242a; color: #fff; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+        .review-table th, .review-table td { border: 1px solid #d0d5dd; padding: 12px 10px; text-align: left; }
+        .review-table th:nth-child(3), .review-table th:nth-child(4), .review-table th:nth-child(5), .review-table td:nth-child(3), .review-table td:nth-child(4), .review-table td:nth-child(5) { text-align: right; }
+        .review-table tbody tr:nth-child(even) { background: #f9fafb; }
+        .review-total-box { display: flex; justify-content: flex-end; align-items: baseline; gap: 18px; margin-top: 22px; font-size: 18px; }
+        .review-total-box strong { font-size: 30px; }
+        .review-disclaimer { margin: 12px 0 0; font-size: 13px; opacity: .65; }
+        .review-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; }
+        @media (max-width: 700px) {
+          .order-review-page { padding: 14px; }
+          .order-review-wrap { padding: 20px; border-radius: 12px; }
+          .order-review-header { flex-direction: column; }
+          .order-review-date { text-align: left; }
+          .review-info-grid { grid-template-columns: 1fr; }
+          .review-full { grid-column: auto; }
+          .review-actions { flex-direction: column-reverse; }
+          .review-actions button { width: 100%; }
+        }
+      `}</style>
 
       {activeTab === "parts" ? (
         <main
@@ -1036,6 +1207,56 @@ function App() {
             className="parts-quote-sidebar quote-sidebar"
             style={{ position: "sticky", top: "24px" }}
           >
+            <div
+              className="dealer-card"
+              style={{ marginBottom: "16px" }}
+            >
+              <h2>Order Information</h2>
+              <div className="dealer-grid">
+                <label>
+                  Date
+                  <input
+                    type="date"
+                    value={dealerInfo.date}
+                    onChange={(e) =>
+                      setDealerInfo({ ...dealerInfo, date: e.target.value })
+                    }
+                  />
+                </label>
+
+                <label>
+                  Dealer Name
+                  <input
+                    value={dealerInfo.dealerName}
+                    onChange={(e) =>
+                      setDealerInfo({ ...dealerInfo, dealerName: e.target.value })
+                    }
+                  />
+                </label>
+
+                <label>
+                  Dealer Email
+                  <input
+                    type="email"
+                    value={dealerInfo.dealerEmail}
+                    onChange={(e) =>
+                      setDealerInfo({ ...dealerInfo, dealerEmail: e.target.value })
+                    }
+                  />
+                </label>
+
+                <label>
+                  PO Number
+                  <input
+                    value={dealerInfo.poNumber}
+                    onChange={(e) =>
+                      setDealerInfo({ ...dealerInfo, poNumber: e.target.value })
+                    }
+                  />
+                </label>
+              </div>
+            </div>
+
             <div className="quote-top">
               <h2>Parts Quote</h2>
               <p>Dealer parts pricing.</p>
@@ -1103,6 +1324,8 @@ function App() {
             </div>
           </aside>
         </main>
+      ) : orderStep === "review" ? (
+        renderOrderReview()
       ) : (
       <main className="main-layout">
         <nav className="category-sidebar">
@@ -1148,6 +1371,17 @@ function App() {
                   value={dealerInfo.dealerName}
                   onChange={(e) =>
                     setDealerInfo({ ...dealerInfo, dealerName: e.target.value })
+                  }
+                />
+              </label>
+
+              <label>
+                Dealer Email
+                <input
+                  type="email"
+                  value={dealerInfo.dealerEmail}
+                  onChange={(e) =>
+                    setDealerInfo({ ...dealerInfo, dealerEmail: e.target.value })
                   }
                 />
               </label>
@@ -1382,10 +1616,10 @@ function App() {
 
             <button
               className="submit-button"
-              onClick={submitQuoteRequest}
+              onClick={openOrderReview}
               disabled={!selectedMachine}
             >
-              Submit Quote Request
+              Review Order
             </button>
           </div>
         </aside>
