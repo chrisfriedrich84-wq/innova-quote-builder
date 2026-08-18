@@ -650,13 +650,36 @@ function App() {
   }
 
   function openOrderReview() {
-    if (!selectedMachine) return
+    if (activeTab === "parts") {
+      if (partsCartItems.length === 0) return
+    } else if (!selectedMachine) {
+      return
+    }
+
     setOrderStep("review")
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
 
+  function getReviewItems() {
+    return activeTab === "parts" ? partsCartItems : quoteItems
+  }
+
+  function getReviewTotal() {
+    return activeTab === "parts" ? partsSubtotal : getPdfSubtotal()
+  }
+
+  function getReviewTypeLabel() {
+    if (activeTab === "parts") return "Parts Order"
+    return pricingView === "whiteGlove" ? "White Glove Install" : "Dealer Install"
+  }
+
   async function submitQuoteRequest() {
-    if (!selectedMachine) return
+    const reviewItems = getReviewItems()
+
+    if (reviewItems.length === 0) {
+      alert("Please add at least one item before submitting the order.")
+      return
+    }
 
     const reviewElement = reviewRef.current
 
@@ -696,9 +719,9 @@ function App() {
 
       const pdfBase64 = pdfDataUri.split(",")[1]
 
-      const subject = `INNOVA ${
-        pricingView === "whiteGlove" ? "White Glove Install" : "Dealer Install"
-      } Order - ${dealerInfo.dealerName || "Dealer"}`
+      const subject = `INNOVA ${getReviewTypeLabel()} Order - ${
+        dealerInfo.dealerName || "Dealer"
+      }`
 
       const emailBody = `
         <p>Hello,</p>
@@ -707,17 +730,15 @@ function App() {
           <strong>Dealer Name:</strong> ${dealerInfo.dealerName || ""}<br>
           <strong>Dealer Email:</strong> ${dealerInfo.dealerEmail || ""}<br>
           <strong>PO Number:</strong> ${dealerInfo.poNumber || ""}<br>
-          <strong>Order Type:</strong> ${
-            pricingView === "whiteGlove" ? "White Glove Install" : "Dealer Install"
-          }<br>
+          <strong>Order Type:</strong> ${getReviewTypeLabel()}<br>
           ${
-            pricingView === "whiteGlove"
+            activeTab !== "parts" && pricingView === "whiteGlove"
               ? `<strong>Customer Name:</strong> ${dealerInfo.customerName || ""}<br>
                  <strong>Customer Address:</strong> ${dealerInfo.customerAddress || ""}<br>
                  <strong>Customer Contact:</strong> ${dealerInfo.customerContact || ""}<br>`
               : ""
           }
-          <strong>Order Total:</strong> ${money(getPdfSubtotal())}
+          <strong>Order Total:</strong> ${money(getReviewTotal())}
         </p>
         <p>The order review PDF is attached to this email.</p>
       `
@@ -729,7 +750,10 @@ function App() {
           subject,
           html: emailBody,
           pdfBase64,
-          fileName: `INNOVA_Order_${(dealerInfo.dealerName || "Dealer").replace(
+          fileName: `INNOVA_${getReviewTypeLabel().replace(
+            /[^a-z0-9_-]/gi,
+            "_"
+          )}_${(dealerInfo.dealerName || "Dealer").replace(
             /[^a-z0-9_-]/gi,
             "_"
           )}.pdf`,
@@ -742,7 +766,9 @@ function App() {
         throw new Error(result.error || "The order could not be submitted.")
       }
 
-      alert("Order submitted successfully. The order PDF has been emailed to the sales team.")
+      alert(
+        "Order submitted successfully. The order PDF has been emailed to the sales team."
+      )
       setOrderStep("builder")
     } catch (error) {
       console.error("Order submission failed:", error)
@@ -753,6 +779,11 @@ function App() {
   }
 
   function renderOrderReview() {
+    const reviewItems = getReviewItems()
+    const reviewTotal = getReviewTotal()
+    const reviewType = getReviewTypeLabel()
+    const showWhiteGlove = activeTab !== "parts" && pricingView === "whiteGlove"
+
     return (
       <main className="order-review-page">
         <div className="order-review-wrap" ref={reviewRef} id="order-review-print">
@@ -760,11 +791,7 @@ function App() {
             <div>
               <img src={LOGO} alt="INNOVA" className="order-review-logo" />
               <h1>Order Review</h1>
-              <p>
-                {pricingView === "whiteGlove"
-                  ? "White Glove Install"
-                  : "Dealer Install"}
-              </p>
+              <p>{reviewType}</p>
             </div>
             <div className="order-review-date">
               <strong>Date</strong>
@@ -778,7 +805,7 @@ function App() {
               <div><strong>Dealer Name</strong><span>{dealerInfo.dealerName || "—"}</span></div>
               <div><strong>Dealer Email</strong><span>{dealerInfo.dealerEmail || "—"}</span></div>
               <div><strong>PO Number</strong><span>{dealerInfo.poNumber || "—"}</span></div>
-              {pricingView === "whiteGlove" && (
+              {showWhiteGlove && (
                 <>
                   <div><strong>Customer Name</strong><span>{dealerInfo.customerName || "—"}</span></div>
                   <div><strong>Customer Contact</strong><span>{dealerInfo.customerContact || "—"}</span></div>
@@ -792,7 +819,7 @@ function App() {
           <section className="review-order-card">
             <div className="review-section-title">
               <h2>Order Items</h2>
-              <span>{quoteItems.length} item{quoteItems.length === 1 ? "" : "s"}</span>
+              <span>{reviewItems.length} item{reviewItems.length === 1 ? "" : "s"}</span>
             </div>
 
             <div className="review-table-wrap">
@@ -807,16 +834,24 @@ function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {quoteItems.map((item) => (
-                    <tr key={item.sku}>
-                      <td>{item.sku}</td>
-                      <td>{item.name}</td>
-                      <td>{item.qty}</td>
-                      <td>{money(getDisplayPrice(item, pricingView))}</td>
-                      <td>{money(getDisplayPrice(item, pricingView) * item.qty)}</td>
-                    </tr>
-                  ))}
-                  {pricingView === "whiteGlove" && (
+                  {reviewItems.map((item) => {
+                    const unitPrice =
+                      activeTab === "parts"
+                        ? item.price
+                        : getDisplayPrice(item, pricingView)
+
+                    return (
+                      <tr key={item.sku}>
+                        <td>{item.sku}</td>
+                        <td>{item.name}</td>
+                        <td>{item.qty}</td>
+                        <td>{money(unitPrice)}</td>
+                        <td>{money(unitPrice * item.qty)}</td>
+                      </tr>
+                    )
+                  })}
+
+                  {showWhiteGlove && (
                     <tr>
                       <td>WGD</td>
                       <td>White Glove Fee</td>
@@ -831,7 +866,7 @@ function App() {
 
             <div className="review-total-box">
               <span>Order Total</span>
-              <strong>{money(getPdfSubtotal())}</strong>
+              <strong>{money(reviewTotal)}</strong>
             </div>
 
             <p className="review-disclaimer">
@@ -849,7 +884,7 @@ function App() {
             <button
               className="submit-button"
               onClick={submitQuoteRequest}
-              disabled={!selectedMachine}
+              disabled={reviewItems.length === 0}
             >
               Submit Order
             </button>
@@ -1042,7 +1077,9 @@ function App() {
         }
       `}</style>
 
-      {activeTab === "parts" ? (
+      {orderStep === "review" ? (
+        renderOrderReview()
+      ) : activeTab === "parts" ? (
         <main
           className="parts-workspace"
           style={{
@@ -1077,6 +1114,56 @@ function App() {
                 <span style={{ opacity: 0.7 }}>
                   {filteredParts.length.toLocaleString()} parts available
                 </span>
+              </div>
+            </div>
+
+            <div
+              className="dealer-card"
+              style={{ marginBottom: "16px" }}
+            >
+              <h2>Order Information</h2>
+              <div className="dealer-grid">
+                <label>
+                  Date
+                  <input
+                    type="date"
+                    value={dealerInfo.date}
+                    onChange={(e) =>
+                      setDealerInfo({ ...dealerInfo, date: e.target.value })
+                    }
+                  />
+                </label>
+
+                <label>
+                  Dealer Name
+                  <input
+                    value={dealerInfo.dealerName}
+                    onChange={(e) =>
+                      setDealerInfo({ ...dealerInfo, dealerName: e.target.value })
+                    }
+                  />
+                </label>
+
+                <label>
+                  Dealer Email
+                  <input
+                    type="email"
+                    value={dealerInfo.dealerEmail}
+                    onChange={(e) =>
+                      setDealerInfo({ ...dealerInfo, dealerEmail: e.target.value })
+                    }
+                  />
+                </label>
+
+                <label>
+                  PO Number
+                  <input
+                    value={dealerInfo.poNumber}
+                    onChange={(e) =>
+                      setDealerInfo({ ...dealerInfo, poNumber: e.target.value })
+                    }
+                  />
+                </label>
               </div>
             </div>
 
@@ -1207,55 +1294,6 @@ function App() {
             className="parts-quote-sidebar quote-sidebar"
             style={{ position: "sticky", top: "24px" }}
           >
-            <div
-              className="dealer-card"
-              style={{ marginBottom: "16px" }}
-            >
-              <h2>Order Information</h2>
-              <div className="dealer-grid">
-                <label>
-                  Date
-                  <input
-                    type="date"
-                    value={dealerInfo.date}
-                    onChange={(e) =>
-                      setDealerInfo({ ...dealerInfo, date: e.target.value })
-                    }
-                  />
-                </label>
-
-                <label>
-                  Dealer Name
-                  <input
-                    value={dealerInfo.dealerName}
-                    onChange={(e) =>
-                      setDealerInfo({ ...dealerInfo, dealerName: e.target.value })
-                    }
-                  />
-                </label>
-
-                <label>
-                  Dealer Email
-                  <input
-                    type="email"
-                    value={dealerInfo.dealerEmail}
-                    onChange={(e) =>
-                      setDealerInfo({ ...dealerInfo, dealerEmail: e.target.value })
-                    }
-                  />
-                </label>
-
-                <label>
-                  PO Number
-                  <input
-                    value={dealerInfo.poNumber}
-                    onChange={(e) =>
-                      setDealerInfo({ ...dealerInfo, poNumber: e.target.value })
-                    }
-                  />
-                </label>
-              </div>
-            </div>
 
             <div className="quote-top">
               <h2>Parts Quote</h2>
@@ -1321,11 +1359,17 @@ function App() {
               >
                 Export Sales Quote
               </button>
+
+              <button
+                className="submit-button"
+                onClick={openOrderReview}
+                disabled={partsCartItems.length === 0}
+              >
+                Review Order
+              </button>
             </div>
           </aside>
         </main>
-      ) : orderStep === "review" ? (
-        renderOrderReview()
       ) : (
       <main className="main-layout">
         <nav className="category-sidebar">
