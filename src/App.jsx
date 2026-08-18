@@ -51,7 +51,8 @@ function App() {
     poNumber: "",
     customerName: "",
     customerAddress: "",
-    customerContact: "",
+    customerEmail: "",
+    customerPhone: "",
     notes: "",
   })
 
@@ -478,7 +479,8 @@ function App() {
       pricingView === "whiteGlove"
         ? `
           <div><strong>Customer Name:</strong> ${dealerInfo.customerName}</div>
-          <div><strong>Customer Contact:</strong> ${dealerInfo.customerContact}</div>
+          <div><strong>Customer Email:</strong> ${dealerInfo.customerEmail}</div>
+          <div><strong>Customer Phone:</strong> ${dealerInfo.customerPhone}</div>
           <div style="grid-column: 1 / -1;"><strong>Customer Address:</strong> ${dealerInfo.customerAddress}</div>
         `
         : ""
@@ -649,7 +651,38 @@ function App() {
     printWindow.print()
   }
 
+  function validateRequiredFields() {
+    const missing = []
+
+    if (!dealerInfo.dealerName.trim()) missing.push("Dealer Name")
+    if (!dealerInfo.dealerEmail.trim()) missing.push("Dealer Email")
+
+    if (activeTab !== "parts" && pricingView === "whiteGlove") {
+      if (!dealerInfo.customerName.trim()) missing.push("Customer Name")
+      if (!dealerInfo.customerAddress.trim()) missing.push("Customer Address")
+      if (!dealerInfo.customerEmail.trim()) missing.push("Customer Email")
+      if (!dealerInfo.customerPhone.trim()) missing.push("Customer Phone")
+    }
+
+    if (dealerInfo.dealerEmail.trim() && !/^\S+@\S+\.\S+$/.test(dealerInfo.dealerEmail.trim())) {
+      missing.push("a valid Dealer Email")
+    }
+
+    if (activeTab !== "parts" && pricingView === "whiteGlove" && dealerInfo.customerEmail.trim() && !/^\S+@\S+\.\S+$/.test(dealerInfo.customerEmail.trim())) {
+      missing.push("a valid Customer Email")
+    }
+
+    if (missing.length) {
+      alert(`Please complete the following required field${missing.length === 1 ? "" : "s"} before continuing:\n\n• ${missing.join("\n• ")}`)
+      return false
+    }
+
+    return true
+  }
+
   function openOrderReview() {
+    if (!validateRequiredFields()) return
+
     if (activeTab === "parts") {
       if (partsCartItems.length === 0) return
     } else if (!selectedMachine) {
@@ -674,6 +707,8 @@ function App() {
   }
 
   async function submitQuoteRequest() {
+    if (!validateRequiredFields()) return
+
     const reviewItems = getReviewItems()
 
     if (reviewItems.length === 0) {
@@ -735,7 +770,8 @@ function App() {
             activeTab !== "parts" && pricingView === "whiteGlove"
               ? `<strong>Customer Name:</strong> ${dealerInfo.customerName || ""}<br>
                  <strong>Customer Address:</strong> ${dealerInfo.customerAddress || ""}<br>
-                 <strong>Customer Contact:</strong> ${dealerInfo.customerContact || ""}<br>`
+                 <strong>Customer Email:</strong> ${dealerInfo.customerEmail || ""}<br>
+                 <strong>Customer Phone:</strong> ${dealerInfo.customerPhone || ""}<br>`
               : ""
           }
           <strong>Order Total:</strong> ${money(getReviewTotal())}
@@ -750,6 +786,8 @@ function App() {
           subject,
           html: emailBody,
           pdfBase64,
+          dealerEmail: dealerInfo.dealerEmail.trim(),
+          customerEmail: activeTab !== "parts" && pricingView === "whiteGlove" ? dealerInfo.customerEmail.trim() : "",
           fileName: `INNOVA_${getReviewTypeLabel().replace(
             /[^a-z0-9_-]/gi,
             "_"
@@ -808,7 +846,8 @@ function App() {
               {showWhiteGlove && (
                 <>
                   <div><strong>Customer Name</strong><span>{dealerInfo.customerName || "—"}</span></div>
-                  <div><strong>Customer Contact</strong><span>{dealerInfo.customerContact || "—"}</span></div>
+                  <div><strong>Customer Email</strong><span>{dealerInfo.customerEmail || "—"}</span></div>
+                  <div><strong>Customer Phone</strong><span>{dealerInfo.customerPhone || "—"}</span></div>
                   <div className="review-full"><strong>Customer Address</strong><span>{dealerInfo.customerAddress || "—"}</span></div>
                 </>
               )}
@@ -1410,8 +1449,8 @@ function App() {
               </label>
 
               <label>
-                Dealer Name
-                <input
+                Dealer Name *
+                <input required
                   value={dealerInfo.dealerName}
                   onChange={(e) =>
                     setDealerInfo({ ...dealerInfo, dealerName: e.target.value })
@@ -1420,8 +1459,8 @@ function App() {
               </label>
 
               <label>
-                Dealer Email
-                <input
+                Dealer Email *
+                <input required
                   type="email"
                   value={dealerInfo.dealerEmail}
                   onChange={(e) =>
@@ -1443,8 +1482,9 @@ function App() {
               {pricingView === "whiteGlove" && (
                 <>
                   <label>
-                    Customer Name
+                    Customer Name *
                     <input
+                      required
                       value={dealerInfo.customerName}
                       onChange={(e) =>
                         setDealerInfo({
@@ -1456,8 +1496,9 @@ function App() {
                   </label>
 
                   <label>
-                    Customer Address
+                    Customer Address *
                     <input
+                      required
                       value={dealerInfo.customerAddress}
                       onChange={(e) =>
                         setDealerInfo({
@@ -1469,13 +1510,30 @@ function App() {
                   </label>
 
                   <label>
-                    Customer Contact
+                    Customer Email *
                     <input
-                      value={dealerInfo.customerContact}
+                      required
+                      type="email"
+                      value={dealerInfo.customerEmail}
                       onChange={(e) =>
                         setDealerInfo({
                           ...dealerInfo,
-                          customerContact: e.target.value,
+                          customerEmail: e.target.value,
+                        })
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    Customer Phone *
+                    <input
+                      required
+                      type="tel"
+                      value={dealerInfo.customerPhone}
+                      onChange={(e) =>
+                        setDealerInfo({
+                          ...dealerInfo,
+                          customerPhone: e.target.value,
                         })
                       }
                     />
