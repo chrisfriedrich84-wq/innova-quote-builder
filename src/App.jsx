@@ -979,7 +979,7 @@ function App() {
             </button>
             <button
               className={activeTab === "parts" ? "active" : ""}
-              onClick={() => { setActiveTab("parts"); setOrderStep("builder") }}}
+              onClick={() => { setActiveTab("parts"); setOrderStep("builder") }}
             >
               Parts
             </button>
