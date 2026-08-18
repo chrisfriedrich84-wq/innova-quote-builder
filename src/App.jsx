@@ -4,6 +4,7 @@ import products from "./data/products"
 
 const LOGO = "/photos/innova-logo.png"
 const WHITE_GLOVE_FEE = 3500
+const WHITE_GLOVE_MACHINE_MARKUP = 1.05
 
 function money(value) {
   return new Intl.NumberFormat("en-US", {
@@ -18,10 +19,24 @@ function slugify(text) {
 
 function getDisplayPrice(product, pricingView) {
   if (pricingView === "whiteGlove" && product.category === "Machine") {
-    return product.price * 1.05
+    return product.price * WHITE_GLOVE_MACHINE_MARKUP
   }
 
   return product.price
+}
+
+function getMachineFamily(product) {
+  const match = product.name.match(/^(INNOVA M\d+(?: Autopilot)?)/i)
+  if (!match) return product.name
+
+  return match[1]
+    .replace(/ Autopilot$/i, " w/ Autopilot")
+    .trim()
+}
+
+function getMachineSize(product) {
+  const match = product.name.match(/(\d+)' Frame/i)
+  return match ? `${match[1]}'` : ""
 }
 
 function App() {
@@ -29,12 +44,16 @@ function App() {
     date: new Date().toISOString().slice(0, 10),
     dealerName: "",
     poNumber: "",
+    customerName: "",
+    customerAddress: "",
+    customerContact: "",
     notes: "",
   })
 
   const [pricingView, setPricingView] = useState("wholesale")
   const [selectedMachine, setSelectedMachine] = useState(null)
   const [selectedItems, setSelectedItems] = useState({})
+  const [machineSizes, setMachineSizes] = useState({})
   const [searchTerm, setSearchTerm] = useState("")
   const [themeMode, setThemeMode] = useState("light")
 
@@ -49,6 +68,24 @@ function App() {
     return grouped
   }, [])
 
+  const machineGroups = useMemo(() => {
+    const grouped = {}
+
+    products
+      .filter((product) => product.category === "Machine")
+      .forEach((product) => {
+        const family = getMachineFamily(product)
+
+        if (!grouped[family]) {
+          grouped[family] = []
+        }
+
+        grouped[family].push(product)
+      })
+
+    return grouped
+  }, [])
+
   const filteredCategories = useMemo(() => {
     const search = searchTerm.trim().toLowerCase()
 
@@ -57,6 +94,21 @@ function App() {
     const filtered = {}
 
     Object.entries(categories).forEach(([category, items]) => {
+      if (category === "Machine") {
+        const machineMatches = items.filter((product) => {
+          return (
+            product.name.toLowerCase().includes(search) ||
+            product.sku.toLowerCase().includes(search) ||
+            product.category.toLowerCase().includes(search)
+          )
+        })
+
+        if (machineMatches.length > 0) {
+          filtered[category] = machineMatches
+        }
+        return
+      }
+
       const matches = items.filter((product) => {
         return (
           product.name.toLowerCase().includes(search) ||
@@ -86,7 +138,8 @@ function App() {
     0
   )
 
-  const subtotal = itemsSubtotal + (pricingView === "whiteGlove" ? WHITE_GLOVE_FEE : 0)
+  const subtotal =
+    itemsSubtotal + (pricingView === "whiteGlove" ? WHITE_GLOVE_FEE : 0)
 
   const keyboardTray = products.find((p) => p.sku === "ACC1064")
 
@@ -95,23 +148,45 @@ function App() {
     keyboardTray &&
     !selectedItems[keyboardTray.sku]
 
+  function selectMachine(product) {
+    setSelectedMachine(product)
+
+    setMachineSizes((prev) => ({
+      ...prev,
+      [getMachineFamily(product)]: getMachineSize(product),
+    }))
+
+    setTimeout(() => {
+      const nextSection = document.querySelector(
+        ".category-section:not(.machine-section)"
+      )
+
+      if (nextSection) {
+        nextSection.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        })
+      }
+    }, 150)
+  }
+
+  function handleMachineSizeChange(family, size) {
+    const variants = machineGroups[family] || []
+    const variant = variants.find((product) => getMachineSize(product) === size)
+
+    setMachineSizes((prev) => ({
+      ...prev,
+      [family]: size,
+    }))
+
+    if (variant) {
+      setSelectedMachine(variant)
+    }
+  }
+
   function toggleProduct(product) {
     if (product.selectionType === "required-single") {
-      setSelectedMachine(product)
-
-      setTimeout(() => {
-        const nextSection = document.querySelector(
-          ".category-section:not(.machine-section):not(.white-glove-section)"
-        )
-
-        if (nextSection) {
-          nextSection.scrollIntoView({
-            behavior: "smooth",
-            block: "start",
-          })
-        }
-      }, 150)
-
+      selectMachine(product)
       return
     }
 
@@ -155,7 +230,9 @@ function App() {
   }
 
   function getPdfSubtotal() {
-    return itemsSubtotal + (pricingView === "whiteGlove" ? WHITE_GLOVE_FEE : 0)
+    return (
+      itemsSubtotal + (pricingView === "whiteGlove" ? WHITE_GLOVE_FEE : 0)
+    )
   }
 
   function saveQuote() {
@@ -189,10 +266,19 @@ function App() {
       `
         : ""
 
+    const customerRows =
+      pricingView === "whiteGlove"
+        ? `
+          <div><strong>Customer Name:</strong> ${dealerInfo.customerName}</div>
+          <div><strong>Customer Contact:</strong> ${dealerInfo.customerContact}</div>
+          <div style="grid-column: 1 / -1;"><strong>Customer Address:</strong> ${dealerInfo.customerAddress}</div>
+        `
+        : ""
+
     const html = `
       <html>
         <head>
-          <title>INNOVA Dealer Quote Request</title>
+          <title>INNOVA ${pricingView === "whiteGlove" ? "White Glove" : "Wholesale"} Quote</title>
           <style>
             body {
               font-family: Arial, sans-serif;
@@ -318,15 +404,18 @@ function App() {
             </div>
 
             <div class="quote-title">
-              <h1>Dealer Quote Request</h1>
+              <h1>${pricingView === "whiteGlove" ? "White Glove Quote" : "Dealer Quote Request"}</h1>
               <div>Date: ${dealerInfo.date}</div>
-              <div class="badge">${pricingView === "whiteGlove" ? "White Glove Pricing" : "Wholesale Dealer Pricing"}</div>
+              <div class="badge">
+                ${pricingView === "whiteGlove" ? "White Glove Pricing" : "Wholesale Dealer Pricing"}
+              </div>
             </div>
           </div>
 
           <div class="dealer-box">
             <div><strong>Dealer Name:</strong> ${dealerInfo.dealerName}</div>
             <div><strong>PO Number:</strong> ${dealerInfo.poNumber}</div>
+            ${customerRows}
           </div>
 
           <table>
@@ -364,6 +453,8 @@ function App() {
     `
 
     const printWindow = window.open("", "_blank")
+    if (!printWindow) return
+
     printWindow.document.write(html)
     printWindow.document.close()
     printWindow.focus()
@@ -374,17 +465,24 @@ function App() {
     saveQuote()
 
     const subject = encodeURIComponent(
-      `INNOVA Quote Request - ${dealerInfo.dealerName || "Dealer"}`
+      `INNOVA ${pricingView === "whiteGlove" ? "White Glove" : "Wholesale"} Quote Request - ${
+        dealerInfo.dealerName || "Dealer"
+      }`
     )
 
     const body = encodeURIComponent(
 `Hello,
 
-Please see the attached INNOVA wholesale dealer quote request.
+Please see the attached INNOVA ${
+  pricingView === "whiteGlove" ? "White Glove" : "wholesale dealer"
+} quote request.
 
 Dealer Name: ${dealerInfo.dealerName}
 PO Number: ${dealerInfo.poNumber}
-Quote Subtotal: ${money(getPdfSubtotal())}
+${pricingView === "whiteGlove" ? `Customer Name: ${dealerInfo.customerName}
+Customer Address: ${dealerInfo.customerAddress}
+Customer Contact: ${dealerInfo.customerContact}
+` : ""}Quote Subtotal: ${money(getPdfSubtotal())}
 
 Please save the generated PDF quote and attach it to this email before sending.
 
@@ -393,6 +491,98 @@ Thank you.`
 
     window.location.href =
       `mailto:sales@abminternational.com?subject=${subject}&body=${body}`
+  }
+
+  function renderMachineCards() {
+    const visibleGroups = Object.entries(machineGroups).filter(
+      ([family, variants]) => {
+        if (!searchTerm.trim()) return true
+
+        const search = searchTerm.trim().toLowerCase()
+
+        return (
+          family.toLowerCase().includes(search) ||
+          variants.some(
+            (product) =>
+              product.name.toLowerCase().includes(search) ||
+              product.sku.toLowerCase().includes(search)
+          )
+        )
+      }
+    )
+
+    return visibleGroups.map(([family, variants]) => {
+      const selected = selectedMachine
+        ? getMachineFamily(selectedMachine) === family
+        : false
+
+      const currentSize =
+        machineSizes[family] || getMachineSize(variants[0]) || ""
+
+      const selectedVariant =
+        variants.find((product) => getMachineSize(product) === currentSize) ||
+        variants[0]
+
+      const sizes = variants
+        .map((product) => getMachineSize(product))
+        .filter(Boolean)
+
+      return (
+        <article
+          key={family}
+          className={`product-card machine-family-card ${
+            selected ? "selected" : ""
+          }`}
+        >
+          <div className="image-wrap">
+            {selectedVariant.image ? (
+              <img src={selectedVariant.image} alt={family} />
+            ) : (
+              <div className="missing-photo">Photo Coming Soon</div>
+            )}
+          </div>
+
+          <div className="product-text">
+            <div className="sku">Machine</div>
+            <h3>{family}</h3>
+
+            <label
+              className="machine-size-label"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Frame Size
+              <select
+                value={currentSize}
+                onChange={(e) =>
+                  handleMachineSizeChange(family, e.target.value)
+                }
+              >
+                {sizes.map((size) => (
+                  <option key={size} value={size}>
+                    {size} Frame
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="price">
+              {money(getDisplayPrice(selectedVariant, pricingView))}
+            </div>
+
+            {pricingView === "whiteGlove" && (
+              <div className="price-note">Includes 5% White Glove machine markup</div>
+            )}
+          </div>
+
+          <button
+            className="add-button"
+            onClick={() => selectMachine(selectedVariant)}
+          >
+            {selected ? "Selected" : "Select Machine"}
+          </button>
+        </article>
+      )
+    })
   }
 
   return (
@@ -461,7 +651,11 @@ Thank you.`
 
         <section className="catalog-area">
           <section className="dealer-card">
-            <h2>Dealer Information</h2>
+            <h2>
+              {pricingView === "whiteGlove"
+                ? "Order Information"
+                : "Dealer Information"}
+            </h2>
 
             <div className="dealer-grid">
               <label>
@@ -494,6 +688,49 @@ Thank you.`
                   }
                 />
               </label>
+
+              {pricingView === "whiteGlove" && (
+                <>
+                  <label>
+                    Customer Name
+                    <input
+                      value={dealerInfo.customerName}
+                      onChange={(e) =>
+                        setDealerInfo({
+                          ...dealerInfo,
+                          customerName: e.target.value,
+                        })
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    Customer Address
+                    <input
+                      value={dealerInfo.customerAddress}
+                      onChange={(e) =>
+                        setDealerInfo({
+                          ...dealerInfo,
+                          customerAddress: e.target.value,
+                        })
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    Customer Contact
+                    <input
+                      value={dealerInfo.customerContact}
+                      onChange={(e) =>
+                        setDealerInfo({
+                          ...dealerInfo,
+                          customerContact: e.target.value,
+                        })
+                      }
+                    />
+                  </label>
+                </>
+              )}
 
               <label className="notes-field">
                 Notes
@@ -530,65 +767,68 @@ Thank you.`
             >
               <div className="category-header">
                 <h2>{category}</h2>
-                {category === "Machine" && <span>Required: select one</span>}
+                {category === "Machine" && (
+                  <span>Required: select one</span>
+                )}
               </div>
 
-              <div className="product-grid">
-                {(category === "Machine" && selectedMachine && !searchTerm
-                  ? [selectedMachine]
-                  : items
-                ).map((product) => {
-                  const selected =
-                    selectedMachine?.sku === product.sku ||
-                    Boolean(selectedItems[product.sku])
+              {category === "Machine" ? (
+                <div className="product-grid">{renderMachineCards()}</div>
+              ) : (
+                <div className="product-grid">
+                  {items.map((product) => {
+                    const selected = Boolean(selectedItems[product.sku])
 
-                  return (
-                    <article
-                      key={product.sku}
-                      className={`product-card ${selected ? "selected" : ""}`}
-                      onClick={() => toggleProduct(product)}
-                    >
-                      <div className="image-wrap">
-                        {product.image ? (
-                          <img src={product.image} alt={product.name} />
-                        ) : (
-                          <div className="missing-photo">Photo Coming Soon</div>
-                        )}
-                      </div>
-
-                      <div className="product-text">
-                        <div className="sku">{product.sku}</div>
-                        <h3>{product.name}</h3>
-                        <div className="price">
-                          {money(getDisplayPrice(product, pricingView))}
+                    return (
+                      <article
+                        key={product.sku}
+                        className={`product-card ${selected ? "selected" : ""}`}
+                        onClick={() => toggleProduct(product)}
+                      >
+                        <div className="image-wrap">
+                          {product.image ? (
+                            <img src={product.image} alt={product.name} />
+                          ) : (
+                            <div className="missing-photo">
+                              Photo Coming Soon
+                            </div>
+                          )}
                         </div>
-                      </div>
 
-                      <button className="add-button">
-                        {selected ? "Added to Quote" : "Add to Quote"}
-                      </button>
-
-                      {product.selectionType === "optional-quantity" &&
-                        selectedItems[product.sku] && (
-                          <div
-                            className="qty-control"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <span>Qty</span>
-                            <input
-                              type="number"
-                              min="1"
-                              value={selectedItems[product.sku].qty}
-                              onChange={(e) =>
-                                updateQty(product.sku, e.target.value)
-                              }
-                            />
+                        <div className="product-text">
+                          <div className="sku">{product.sku}</div>
+                          <h3>{product.name}</h3>
+                          <div className="price">
+                            {money(getDisplayPrice(product, pricingView))}
                           </div>
-                        )}
-                    </article>
-                  )
-                })}
-              </div>
+                        </div>
+
+                        <button className="add-button">
+                          {selected ? "Added to Quote" : "Add to Quote"}
+                        </button>
+
+                        {product.selectionType === "optional-quantity" &&
+                          selectedItems[product.sku] && (
+                            <div
+                              className="qty-control"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <span>Qty</span>
+                              <input
+                                type="number"
+                                min="1"
+                                value={selectedItems[product.sku].qty}
+                                onChange={(e) =>
+                                  updateQty(product.sku, e.target.value)
+                                }
+                              />
+                            </div>
+                          )}
+                      </article>
+                    )
+                  })}
+                </div>
+              )}
             </section>
           ))}
         </section>
@@ -598,7 +838,7 @@ Thank you.`
             <h2>Quote Builder</h2>
             <p>
               {pricingView === "whiteGlove"
-                ? "White Glove pricing view — machines are 5% above wholesale."
+                ? "White Glove pricing — machines are 5% above wholesale and include a $3,500 White Glove Fee."
                 : "Wholesale dealer pricing view."}
             </p>
           </div>
@@ -629,9 +869,13 @@ Thank you.`
 
                     <div className="quote-right">
                       <strong>
-                        {money(getDisplayPrice(item, pricingView) * item.qty)}
+                        {money(
+                          getDisplayPrice(item, pricingView) * item.qty
+                        )}
                       </strong>
-                      <button onClick={() => removeItem(item.sku)}>Remove</button>
+                      <button onClick={() => removeItem(item.sku)}>
+                        Remove
+                      </button>
                     </div>
                   </div>
                 ))}
