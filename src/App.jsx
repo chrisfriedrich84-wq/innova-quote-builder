@@ -3,6 +3,7 @@ import "./App.css"
 import products from "./data/products"
 
 const LOGO = "/photos/innova-logo.png"
+const WHITE_GLOVE_FEE = 3500
 
 function money(value) {
   return new Intl.NumberFormat("en-US", {
@@ -15,30 +16,12 @@ function slugify(text) {
   return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")
 }
 
-function getRetailPrice(product) {
-  const name = product.name.toLowerCase()
-
-  if (product.category === "Machine") {
-    if (name.includes("m20") && name.includes("autopilot")) return 40999
-    if (name.includes("m20")) return 22999
-
-    if (name.includes("m24") && name.includes("autopilot")) return 46999
-    if (name.includes("m24")) return 28999
-
-    if (name.includes("m28")) return 52999
+function getDisplayPrice(product, pricingView) {
+  if (pricingView === "whiteGlove" && product.category === "Machine") {
+    return product.price * 1.05
   }
 
-  return product.price / 0.6  
-}
-
-function getWholesalePrice(product) {
   return product.price
-}
-
-function getDisplayPrice(product, priceMode) {
-  return priceMode === "retail"
-    ? getRetailPrice(product)
-    : getWholesalePrice(product)
 }
 
 function App() {
@@ -49,10 +32,10 @@ function App() {
     notes: "",
   })
 
+  const [pricingView, setPricingView] = useState("wholesale")
   const [selectedMachine, setSelectedMachine] = useState(null)
   const [selectedItems, setSelectedItems] = useState({})
   const [searchTerm, setSearchTerm] = useState("")
-  const [priceMode, setPriceMode] = useState("retail")
   const [themeMode, setThemeMode] = useState("light")
 
   const categories = useMemo(() => {
@@ -98,10 +81,12 @@ function App() {
     return items
   }, [selectedMachine, selectedItems])
 
-  const subtotal = quoteItems.reduce(
-    (total, item) => total + getDisplayPrice(item, priceMode) * item.qty,
+  const itemsSubtotal = quoteItems.reduce(
+    (total, item) => total + getDisplayPrice(item, pricingView) * item.qty,
     0
   )
+
+  const subtotal = itemsSubtotal + (pricingView === "whiteGlove" ? WHITE_GLOVE_FEE : 0)
 
   const keyboardTray = products.find((p) => p.sku === "ACC1064")
 
@@ -116,7 +101,7 @@ function App() {
 
       setTimeout(() => {
         const nextSection = document.querySelector(
-          ".category-section:not(.machine-section)"
+          ".category-section:not(.machine-section):not(.white-glove-section)"
         )
 
         if (nextSection) {
@@ -169,16 +154,13 @@ function App() {
     })
   }
 
-  function getPdfSubtotal(pdfMode) {
-    return quoteItems.reduce(
-      (total, item) => total + getDisplayPrice(item, pdfMode) * item.qty,
-      0
-    )
+  function getPdfSubtotal() {
+    return itemsSubtotal + (pricingView === "whiteGlove" ? WHITE_GLOVE_FEE : 0)
   }
 
-  function saveQuote(pdfMode = priceMode) {
+  function saveQuote() {
     const logoForPdf = `${window.location.origin}${LOGO.replace("./", "/")}`
-    const pdfSubtotal = getPdfSubtotal(pdfMode)
+    const pdfSubtotal = getPdfSubtotal()
 
     const rows = quoteItems
       .map(
@@ -187,28 +169,30 @@ function App() {
             <td>${item.sku}</td>
             <td>${item.name}</td>
             <td>${item.qty}</td>
-            <td>${money(getDisplayPrice(item, pdfMode))}</td>
-            <td>${money(getDisplayPrice(item, pdfMode) * item.qty)}</td>
+            <td>${money(getDisplayPrice(item, pricingView))}</td>
+            <td>${money(getDisplayPrice(item, pricingView) * item.qty)}</td>
           </tr>
         `
       )
       .join("")
 
-    const quoteTitle =
-      pdfMode === "retail" ? "Customer Quote" : "Dealer Quote Request"
-
-    const footerText =
-      pdfMode === "retail"
-        ? "Quote provided by your authorized INNOVA dealer. Shipping and applicable taxes not included."
-        : "Please save this quote and e-mail to sales@abminternational.com."
-
-    const modeBadge =
-      pdfMode === "retail" ? "Retail Customer Pricing" : "Wholesale Dealer Pricing"
+    const whiteGloveRow =
+      pricingView === "whiteGlove"
+        ? `
+        <tr>
+          <td>WGD</td>
+          <td>White Glove Fee</td>
+          <td>1</td>
+          <td>${money(WHITE_GLOVE_FEE)}</td>
+          <td>${money(WHITE_GLOVE_FEE)}</td>
+        </tr>
+      `
+        : ""
 
     const html = `
       <html>
         <head>
-          <title>INNOVA ${quoteTitle}</title>
+          <title>INNOVA Dealer Quote Request</title>
           <style>
             body {
               font-family: Arial, sans-serif;
@@ -243,7 +227,7 @@ function App() {
             .badge {
               display: inline-block;
               margin-top: 8px;
-              background: ${pdfMode === "retail" ? "#00a651" : "#20242a"};
+              background: #20242a;
               color: white;
               padding: 6px 10px;
               border-radius: 999px;
@@ -334,9 +318,9 @@ function App() {
             </div>
 
             <div class="quote-title">
-              <h1>${quoteTitle}</h1>
+              <h1>Dealer Quote Request</h1>
               <div>Date: ${dealerInfo.date}</div>
-              <div class="badge">${modeBadge}</div>
+              <div class="badge">${pricingView === "whiteGlove" ? "White Glove Pricing" : "Wholesale Dealer Pricing"}</div>
             </div>
           </div>
 
@@ -357,7 +341,7 @@ function App() {
             </thead>
 
             <tbody>
-              ${rows || `<tr><td colspan="5">No items selected.</td></tr>`}
+              ${rows || whiteGloveRow ? rows + whiteGloveRow : `<tr><td colspan="5">No items selected.</td></tr>`}
             </tbody>
           </table>
 
@@ -373,7 +357,7 @@ function App() {
           </div>
 
           <div class="footer">
-            ${footerText}
+            Please save this quote and e-mail to sales@abminternational.com.
           </div>
         </body>
       </html>
@@ -387,7 +371,7 @@ function App() {
   }
 
   function submitQuoteRequest() {
-    saveQuote("wholesale")
+    saveQuote()
 
     const subject = encodeURIComponent(
       `INNOVA Quote Request - ${dealerInfo.dealerName || "Dealer"}`
@@ -400,7 +384,7 @@ Please see the attached INNOVA wholesale dealer quote request.
 
 Dealer Name: ${dealerInfo.dealerName}
 PO Number: ${dealerInfo.poNumber}
-Quote Subtotal: ${money(getPdfSubtotal("wholesale"))}
+Quote Subtotal: ${money(getPdfSubtotal())}
 
 Please save the generated PDF quote and attach it to this email before sending.
 
@@ -425,17 +409,17 @@ Thank you.`
         <div className="top-controls">
           <div className="toggle-group">
             <button
-              className={priceMode === "retail" ? "active" : ""}
-              onClick={() => setPriceMode("retail")}
+              className={pricingView === "wholesale" ? "active" : ""}
+              onClick={() => setPricingView("wholesale")}
             >
-              Retail View
+              Wholesale View
             </button>
 
             <button
-              className={priceMode === "wholesale" ? "active" : ""}
-              onClick={() => setPriceMode("wholesale")}
+              className={pricingView === "whiteGlove" ? "active" : ""}
+              onClick={() => setPricingView("whiteGlove")}
             >
-              Wholesale View
+              White Glove View
             </button>
           </div>
 
@@ -576,7 +560,7 @@ Thank you.`
                         <div className="sku">{product.sku}</div>
                         <h3>{product.name}</h3>
                         <div className="price">
-                          {money(getDisplayPrice(product, priceMode))}
+                          {money(getDisplayPrice(product, pricingView))}
                         </div>
                       </div>
 
@@ -613,8 +597,8 @@ Thank you.`
           <div className="quote-top">
             <h2>Quote Builder</h2>
             <p>
-              {priceMode === "retail"
-                ? "Retail customer pricing view."
+              {pricingView === "whiteGlove"
+                ? "White Glove pricing view — machines are 5% above wholesale."
                 : "Wholesale dealer pricing view."}
             </p>
           </div>
@@ -634,22 +618,37 @@ Thank you.`
             {quoteItems.length === 0 ? (
               <div className="empty-cart">Select one machine to begin.</div>
             ) : (
-              quoteItems.map((item) => (
-                <div className="quote-line" key={item.sku}>
-                  <div>
-                    <div className="quote-sku">{item.sku}</div>
-                    <div className="quote-name">{item.name}</div>
-                    <div className="quote-qty">Qty: {item.qty}</div>
-                  </div>
+              <>
+                {quoteItems.map((item) => (
+                  <div className="quote-line" key={item.sku}>
+                    <div>
+                      <div className="quote-sku">{item.sku}</div>
+                      <div className="quote-name">{item.name}</div>
+                      <div className="quote-qty">Qty: {item.qty}</div>
+                    </div>
 
-                  <div className="quote-right">
-                    <strong>
-                      {money(getDisplayPrice(item, priceMode) * item.qty)}
-                    </strong>
-                    <button onClick={() => removeItem(item.sku)}>Remove</button>
+                    <div className="quote-right">
+                      <strong>
+                        {money(getDisplayPrice(item, pricingView) * item.qty)}
+                      </strong>
+                      <button onClick={() => removeItem(item.sku)}>Remove</button>
+                    </div>
                   </div>
-                </div>
-              ))
+                ))}
+
+                {pricingView === "whiteGlove" && (
+                  <div className="quote-line" key="white-glove">
+                    <div>
+                      <div className="quote-sku">WGD</div>
+                      <div className="quote-name">White Glove Fee</div>
+                    </div>
+
+                    <div className="quote-right">
+                      <strong>{money(WHITE_GLOVE_FEE)}</strong>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
@@ -662,19 +661,13 @@ Thank you.`
             <p>Shipping and applicable taxes not included.</p>
 
             <button
-              className="save-button"
-              onClick={() => saveQuote("retail")}
-              disabled={!selectedMachine}
-            >
-              Download Retail Customer Quote
-            </button>
-
-            <button
               className="save-button wholesale-button"
-              onClick={() => saveQuote("wholesale")}
+              onClick={() => saveQuote()}
               disabled={!selectedMachine}
             >
-              Download Wholesale Dealer Quote
+              {pricingView === "whiteGlove"
+                ? "Download White Glove Quote"
+                : "Download Wholesale Dealer Quote"}
             </button>
 
             <button
