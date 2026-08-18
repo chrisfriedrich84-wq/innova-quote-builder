@@ -693,7 +693,7 @@ Thank you.`
     )
 
     window.location.href =
-      `mailto:sales@abminternational.com?subject=${subject}&body=${body}`
+      `mailto:sales@abminternational.com,vince.nutt@abminternational.com,ryan@abminternational.com,krystal@abminternational.com,cheynne@abminternational.com,randy.veldman@abminternational.com?subject=${subject}&body=${body}`
   }
 
   function renderMachineCards() {
